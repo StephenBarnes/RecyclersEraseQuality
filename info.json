@@ -8,6 +8,7 @@
 	"quality_required": true,
 	"dependencies": [
 		"base >= 2.0",
-		"quality"
+		"quality",
+		"? space-age"
 	]
 }

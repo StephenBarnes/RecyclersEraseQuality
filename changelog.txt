@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.0
+Date: 2025-03-14
+  Bugfixes:
+    - Fixed crash when running without Space Age.
+    - Fixed wrong localised names for some items.
+    - Slightly improved how it looks in Factoriopedia.
+---------------------------------------------------------------------------------------------------
 Version: 1.0.0
 Date: 2024-01-15
   Features:

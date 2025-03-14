@@ -1,125 +1,131 @@
-local Constants = require("constants")
+local TESTING = false
 
--- Create a crafting category for handcrafting only, for the manual-scrap-recycling recipe.
+---@return data.ItemPrototype?
+local function getItem(name)
+	for subtype, _ in pairs(defines.prototypes.item) do
+		if data.raw[subtype] ~= nil then -- Necessary because eg when running without Space Age there's no "space-platform-starter-pack" type.
+			local item = data.raw[subtype][name]
+			if item then return item end
+		end
+	end
+end
+
+-- Create subgroups.
 data:extend{
 	{
-		type = "recipe-category",
-		name = "handcrafting-only",
+		type = "item-subgroup",
+		name = "solidify-recycling-fluid",
+		order = "z1",
+		group = "other",
+	},
+	{
+		type = "item-subgroup",
+		name = "recycling",
+		order = "z2",
+		group = "other",
+	},
+	{
+		type = "item-subgroup",
+		name = "recycling-fluid",
+		order = "z3",
+		group = "other",
 	},
 }
-table.insert(data.raw["god-controller"]["default"].crafting_categories, "handcrafting-only")
-table.insert(data.raw["character"]["character"].crafting_categories, "handcrafting-only")
 
--- Create a manual scrap-recycling recipe.
-local manualScrapRecyclingRecipe = table.deepcopy(data.raw.recipe["scrap-recycling"])
-manualScrapRecyclingRecipe.name = "manual-scrap-recycling"
-manualScrapRecyclingRecipe.category = "handcrafting-only"
-manualScrapRecyclingRecipe.localised_name = manualScrapRecyclingRecipe.localised_name or {"recipe-name.scrap-recycling"}
-data:extend{manualScrapRecyclingRecipe}
-
--- Replace scrap recycling recipe unlocked by Recycling technology with the new manual scrap recycling recipe.
-for _, effect in pairs(data.raw.technology["recycling"].effects) do
-	if effect.type == "unlock-recipe" and effect.recipe == "scrap-recycling" then
-		effect.recipe = "manual-scrap-recycling"
-		break
-	end
-end
-
--- Non-handcrafted scrap recycling should be hidden and enabled from the start.
-data.raw.recipe["scrap-recycling"].hidden = true
-data.raw.recipe["scrap-recycling"].enabled = true
-
--- Utility function to get items.
-local itemSubtypes = {
-	"item",
-	"capsule",
-	"ammo",
-	"capsule",
-	"gun",
-	"item-with-entity-data",
-	--"item-with-label",
-	--"item-with-inventory",
-	"blueprint-book",
-	--"item-with-tags",
-	"selection-tool",
-	"blueprint",
-	"copy-paste-tool",
-	"deconstruction-item",
-	"spidertron-remote",
-	"upgrade-item",
-	"module",
-	"rail-planner",
-	"space-platform-starter-pack",
-	"tool",
-	"armor",
-	"repair-tool",
+local ignoreItemRecycling = {
+	["item-unknown"] = true,
+	["copy-paste-tool"] = true,
+	["cut-paste-tool"] = true,
+	["empty-module-slot"] = true,
 }
-local function getItem(name)
-	for _, subtype in ipairs(itemSubtypes) do
-		log(subtype)
-		local item = data.raw[subtype][name]
-		if item then return item end
-	end
-end
 
 -- For each recycle recipe, create a placeholder fluid for the input, and a recipe to solidify the fluid to the recycle recipe's outputs.
-for _, recipe in pairs(data.raw.recipe) do
-	if (recipe.category == "recycling" or recipe.category == "recycling-or-hand-crafting") and #recipe.ingredients == 1 then
-		local ingredientName = recipe.ingredients[1].name
-		local fluidName = "RECYCLING-" .. ingredientName
-		local item = getItem(ingredientName)
-		if item == nil then error("Item " .. ingredientName .. " not found") end
+local function handleRecyclingRecipe(recipe)
+	if (recipe.category ~= "recycling" and recipe.category ~= "recycling-or-hand-crafting") then return end
+	if #recipe.ingredients ~= 1 then return end
 
-		-- Create the new fluid.
-		---@type data.FluidPrototype
-		local fluid = {
-			type = "fluid",
-			name = fluidName,
-			localised_name = item.localised_name or {"item-name." .. ingredientName},
-			order = item.order,
-			subgroup = "fluid",
-			base_color = {r = 0.5, g = 0.5, b = 0.5},
-			flow_color = {r = 0.5, g = 0.5, b = 0.5},
-			default_temperature = 25,
-			hidden = not Constants.TESTING,
-
-			icon = recipe.icon,
-			icon_size = recipe.icon_size,
-			icons = recipe.icons,
-		}
-		data:extend{fluid}
-
-		-- Make the recycler's recipe output the fluid.
-		local originalResults = recipe.results
-		recipe.results = {{type = "fluid", name = fluidName, amount = 1}}
-
-		-- Make a new recipe to solidify the fluid.
-		---@type data.RecipePrototype
-		local solidifyRecipe = {
-			type = "recipe",
-			name = "SOLIDIFY-" .. fluidName,
-			category = "solidify-recycled-items",
-			localised_name = {"recipe-name.solidify-recycling", item.localised_name or {"item-name." .. ingredientName}},
-			enabled = true,
-
-			--hidden = not Constants.TESTING,
-			hidden = true,
-			hidden_in_factoriopedia = false,
-			hide_from_player_crafting = true,
-
-			energy_required = 1,
-			ingredients = {{type = "fluid", name = fluidName, amount = 1}},
-			results = originalResults,
-
-			icon = recipe.icon,
-			icon_size = recipe.icon_size,
-			icons = recipe.icons,
-		}
-		data:extend{solidifyRecipe}
-
-		-- Redirect original recipe to the solidifier recipe.
-		recipe.factoriopedia_alternative = "SOLIDIFY-" .. fluidName
+	local ingredientName = recipe.ingredients[1].name
+	local fluidName = "RECYCLING-" .. ingredientName
+	local item = getItem(ingredientName)
+	if item == nil then
+		log("ERROR: Item " .. ingredientName .. " not found")
+		return
 	end
+	if item.parameter or item.hidden or ignoreItemRecycling[ingredientName] then return end
+
+	local itemLocalisedName -- Try to guess what localised names are defined.
+	if item.localised_name ~= nil then
+		itemLocalisedName = item.localised_name
+	elseif item.place_result ~= nil then
+		itemLocalisedName = {"entity-name." .. item.place_result}
+	elseif item.place_as_equipment_result ~= nil then
+		itemLocalisedName = {"equipment-name." .. item.place_as_equipment_result}
+	else
+		itemLocalisedName = {"item-name." .. ingredientName}
+	end
+
+	-- Create the new fluid.
+	---@type data.FluidPrototype
+	local fluid = {
+		type = "fluid",
+		name = fluidName,
+		localised_name = {"fluid-name.recycling-fluid", itemLocalisedName},
+		localised_description = {"recipe-description.redirect-to-solidify-recipe", "SOLIDIFY-" .. fluidName},
+		order = item.order,
+		subgroup = "recycling-fluid",
+		base_color = {r = 0.5, g = 0.5, b = 0.5},
+		flow_color = {r = 0.5, g = 0.5, b = 0.5},
+		default_temperature = 25,
+		hidden = false,
+		hidden_in_factoriopedia = false,
+
+		icon = recipe.icon,
+		icon_size = recipe.icon_size,
+		icons = recipe.icons,
+	}
+	data:extend{fluid}
+
+	-- Make the recycler's recipe output the fluid.
+	local originalResults = recipe.results
+	recipe.results = {{type = "fluid", name = fluidName, amount = 1}}
+
+	-- Make a new recipe to solidify the fluid.
+	---@type data.RecipePrototype
+	local solidifyRecipe = {
+		type = "recipe",
+		name = "SOLIDIFY-" .. fluidName,
+		category = "solidify-recycled-items",
+		localised_name = {"recipe-name.solidify-recycling", itemLocalisedName},
+		enabled = true,
+
+		hidden = false, -- Must be false, or else you can't click through from the fluid.
+		hidden_in_factoriopedia = false,
+		hide_from_player_crafting = true,
+		subgroup = "solidify-recycling-fluid",
+
+		energy_required = recipe.energy_required,
+		ingredients = {{type = "fluid", name = fluidName, amount = 1}},
+		results = originalResults,
+
+		icon = recipe.icon,
+		icon_size = recipe.icon_size,
+		icons = recipe.icons,
+	}
+	data:extend{solidifyRecipe}
+
+	-- Redirect original recipe to the solidifier recipe. This doesn't work, so rather just add description.
+	--[[recipe.factoriopedia_alternative = solidifyRecipe.name
+	recipe.hidden_in_factoriopedia = false
+	recipe.hidden = false
+	recipe.subgroup = "recycling"
+	if recipe.category ~= "recycling-or-hand-crafting" then
+		recipe.hide_from_player_crafting = true
+	end
+	]]
+	recipe.localised_description = {"recipe-description.redirect-to-solidify-recipe", solidifyRecipe.name}
+end
+for _, recipe in pairs(data.raw.recipe) do
+	handleRecyclingRecipe(recipe)
 end
 
 -- Create solidifier furnace entity that turns these fluids into items.
@@ -127,7 +133,7 @@ end
 local solidifierEnt = table.deepcopy(data.raw.furnace.recycler)
 solidifierEnt.name = "recycle-solidifier"
 solidifierEnt.flags = {"not-on-map", "not-in-kill-statistics", "not-deconstructable", "not-flammable"}
---solidifierEnt.selectable_in_game = Constants.TESTING
+--solidifierEnt.selectable_in_game = TESTING
 solidifierEnt.selectable_in_game = false
 solidifierEnt.minable = nil
 solidifierEnt.allowed_effects = {}
@@ -153,7 +159,7 @@ solidifierEnt.fluid_boxes = {
 		pipe_connections = {{flow_direction = "input", position = {0, -1}, direction = defines.direction.south}},
 		secondary_draw_orders = {north = -1},
 		volume = 100,
-		hide_connection_info = not Constants.TESTING,
+		hide_connection_info = not TESTING,
 	},
 }
 solidifierEnt.icons = data.raw.recipe["recycler-recycling"].icons
@@ -163,6 +169,8 @@ solidifierEnt.graphics_set_flipped = nil
 solidifierEnt.ambient_sounds = nil
 solidifierEnt.ambient_sounds_group = nil
 solidifierEnt.working_sound = nil
+solidifierEnt.hidden = true
+solidifierEnt.hidden_in_factoriopedia = true
 data:extend{solidifierEnt}
 
 -- Recycler no longer outputs solid result.
@@ -177,7 +185,7 @@ for _, effect in pairs(data.raw.furnace.recycler.allowed_effects) do
 end
 data.raw.furnace.recycler.allowed_effects = newRecyclerAllowed
 
-if Constants.TESTING then
+if TESTING then
 	-- Create item for solidifier.
 	local solidifierItem = table.deepcopy(data.raw.item["assembling-machine-2"])
 	solidifierItem.name = "recycle-solidifier"
@@ -212,7 +220,7 @@ data.raw.furnace.recycler.fluid_boxes = {
 		base_level = -1,
 		pipe_connections = {{flow_direction = "output", position = {0, 0}, direction = defines.direction.north}},
 		volume = 1,
-		hide_connection_info = not Constants.TESTING,
+		hide_connection_info = not TESTING,
 	},
 }
 data.raw.furnace.recycler.result_inventory_size = 0

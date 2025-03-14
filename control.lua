@@ -1,11 +1,11 @@
-local Constants = require("constants")
+local TESTING = false
 
 ------------------------------------------------------------------------
 --- Functions to create and remove solidifiers when recyclers are built and destroyed.
 
 ---@param recycler LuaEntity
 local function createSolidifier(recycler)
-	if Constants.TESTING then game.print("Creating solidifier...") end
+	if TESTING then game.print("Creating solidifier...") end
 	local created = recycler.surface.create_entity{
 		name = "recycle-solidifier",
 		position = recycler.position,
@@ -13,34 +13,32 @@ local function createSolidifier(recycler)
 		orientation = recycler.orientation,
 		direction = recycler.direction,
 	}
-	-- Seems mirroring can't go in create_entity, has to be separate?
+	-- Seems mirroring can't go in create_entity, has to be separate.
 	if created ~= nil then
 		created.mirroring = recycler.mirroring
 	end
 end
 
 local function deleteSolidifier(recycler)
-	if Constants.TESTING then game.print("Deleting solidifiers for a recycler...") end
-	local ents = recycler.surface.find_entities_filtered{
+	if TESTING then game.print("Deleting solidifiers for a recycler...") end
+	local solidifiers = recycler.surface.find_entities_filtered{
 		name = "recycle-solidifier",
 		position = recycler.position,
 	}
-	for _, ent in pairs(ents) do
-		ent.destroy()
-		if Constants.TESTING then game.print("Deleted a solidifier") end
+	for _, solidifier in pairs(solidifiers) do
+		solidifier.destroy()
+		if TESTING then game.print("Deleted a solidifier") end
 	end
 end
 
 local function maybeCreateSolidifier(recycler)
 	-- Creates a solidifier if one doesn't already exist.
 	if recycler.valid then
-		local existing = recycler.surface.find_entities_filtered{
+		local numExisting = recycler.surface.count_entities_filtered{
 			name = "recycle-solidifier",
 			position = recycler.position,
 		}
-		if #existing == 0 then
-			createSolidifier(recycler)
-		end
+		if numExisting == 0 then createSolidifier(recycler) end
 	end
 end
 
