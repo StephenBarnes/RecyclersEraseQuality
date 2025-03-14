@@ -1,10 +1,14 @@
-local TESTING = false
+local HIDE_CONNECTIONS = true -- Whether to hide fluid connections. True for release, false when testing.
+local SOLIDIFIER_SELECTABLE = false -- Whether to allow the solidifier to be selected in the game. False for release.
+local SOLIDIFIER_SELECTION_PRIORITY = 1 -- Set to 51 to select over recycler, 1 to select recycler instead.
 
 ---@return data.ItemPrototype?
 local function getItem(name)
 	for subtype, _ in pairs(defines.prototypes.item) do
 		if data.raw[subtype] ~= nil then -- Necessary because eg when running without Space Age there's no "space-platform-starter-pack" type.
+			---@diagnostic disable-next-line: assign-type-mismatch
 			local item = data.raw[subtype][name]
+			---@diagnostic disable-next-line: return-type-mismatch
 			if item then return item end
 		end
 	end
@@ -132,9 +136,17 @@ end
 ---@type data.FurnacePrototype
 local solidifierEnt = table.deepcopy(data.raw.furnace.recycler)
 solidifierEnt.name = "recycle-solidifier"
-solidifierEnt.flags = {"not-on-map", "not-in-kill-statistics", "not-deconstructable", "not-flammable"}
---solidifierEnt.selectable_in_game = TESTING
-solidifierEnt.selectable_in_game = false
+solidifierEnt.flags = {
+	"not-on-map",
+	"not-in-kill-statistics",
+	"not-deconstructable",
+	"not-flammable",
+	"placeable-off-grid", -- So it can go in the center of the recycler.
+	"no-automated-item-removal",
+	"no-automated-item-insertion", -- So inserters won't target it instead of the recycler.
+}
+solidifierEnt.selectable_in_game = SOLIDIFIER_SELECTABLE
+solidifierEnt.selection_priority = SOLIDIFIER_SELECTION_PRIORITY
 solidifierEnt.minable = nil
 solidifierEnt.allowed_effects = {}
 solidifierEnt.module_slots = 0
@@ -142,10 +154,10 @@ solidifierEnt.next_upgrade = nil
 solidifierEnt.crafting_categories = {"solidify-recycled-items"}
 solidifierEnt.result_inventory_size = 10
 solidifierEnt.source_inventory_size = 0
-solidifierEnt.energy_usage = "1W"
-solidifierEnt.source_inventory_size = 0
+solidifierEnt.fast_replaceable_group = nil
 solidifierEnt.crafting_speed = 1000
 solidifierEnt.energy_source = {type = "void"}
+solidifierEnt.energy_usage = "1W"
 solidifierEnt.order = data.raw.item["recycler"].order .. "-1"
 solidifierEnt.show_recipe_icon = false
 solidifierEnt.show_recipe_icon_on_map = false
@@ -154,12 +166,12 @@ solidifierEnt.fluid_boxes = {
 		production_type = "input",
 		pipe_picture = nil,
 		pipe_covers = nil,
-		base_area = 10,
+		base_area = 1,
 		base_level = -1,
-		pipe_connections = {{flow_direction = "input", position = {0, -1}, direction = defines.direction.south}},
+		pipe_connections = {{flow_direction = "input", position = {0, 0}, direction = defines.direction.south}},
 		secondary_draw_orders = {north = -1},
-		volume = 100,
-		hide_connection_info = not TESTING,
+		volume = 1,
+		hide_connection_info = HIDE_CONNECTIONS,
 	},
 }
 solidifierEnt.icons = data.raw.recipe["recycler-recycling"].icons
@@ -171,10 +183,17 @@ solidifierEnt.ambient_sounds_group = nil
 solidifierEnt.working_sound = nil
 solidifierEnt.hidden = true
 solidifierEnt.hidden_in_factoriopedia = true
+solidifierEnt.collision_mask = {layers={}}
+-- Solidifier needs to have a smaller collision box, so inserters etc. prefer to place things into the recycler, not the solidifier.
+solidifierEnt.collision_box = {{-.1, -.1}, {.1, .1}}
+solidifierEnt.selection_box = solidifierEnt.collision_box
+solidifierEnt.tile_width = 1
+solidifierEnt.tile_height = 1
 data:extend{solidifierEnt}
 
 -- Recycler no longer outputs solid result.
-data.raw.furnace.recycler.vector_to_place_result = nil
+-- But, still want to show the arrow when placing it.
+--data.raw.furnace.recycler.vector_to_place_result = nil
 
 -- Recycler shouldn't allow quality.
 local newRecyclerAllowed = {}
@@ -184,23 +203,6 @@ for _, effect in pairs(data.raw.furnace.recycler.allowed_effects) do
 	end
 end
 data.raw.furnace.recycler.allowed_effects = newRecyclerAllowed
-
-if TESTING then
-	-- Create item for solidifier.
-	local solidifierItem = table.deepcopy(data.raw.item["assembling-machine-2"])
-	solidifierItem.name = "recycle-solidifier"
-	solidifierItem.place_result = "recycle-solidifier"
-	solidifierItem.subgroup = data.raw.item["recycler"].subgroup
-	solidifierItem.order = data.raw.item["recycler"].order .. "-1"
-	data:extend{solidifierItem}
-
-	-- Create recipe for solidifier.
-	local solidifierRecipe = table.deepcopy(data.raw.recipe["assembling-machine-2"])
-	solidifierRecipe.name = "recycle-solidifier"
-	solidifierRecipe.results = {{type = "item", name = "recycle-solidifier", amount = 1}}
-	data:extend{solidifierRecipe}
-	table.insert(data.raw.technology["recycling"].effects, 2, {type = "unlock-recipe", recipe = "recycle-solidifier"})
-end
 
 -- Create crafting category for solidifying recycled items.
 ---@type data.RecipeCategory
@@ -218,9 +220,9 @@ data.raw.furnace.recycler.fluid_boxes = {
 		pipe_covers = nil,
 		base_area = 10,
 		base_level = -1,
-		pipe_connections = {{flow_direction = "output", position = {0, 0}, direction = defines.direction.north}},
+		pipe_connections = {{flow_direction = "output", position = {0, 1}, direction = defines.direction.north}},
 		volume = 1,
-		hide_connection_info = not TESTING,
+		hide_connection_info = HIDE_CONNECTIONS,
 	},
 }
 data.raw.furnace.recycler.result_inventory_size = 0
