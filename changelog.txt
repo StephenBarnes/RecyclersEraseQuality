@@ -2,9 +2,11 @@
 Version: 1.1.0
 Date: 2025-03-14
   Bugfixes:
-    - Fixed crash when running without Space Age.
     - Fixed bug that prevented inserting items into recycler by inserters or other recyclers.
     - Fixed missing localised names for some items.
+  Compatibility:
+    - Fixed crash when running without Space Age.
+    - Added compatibility with Even Pickier Dollies.
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.0
 Date: 2025-01-15
